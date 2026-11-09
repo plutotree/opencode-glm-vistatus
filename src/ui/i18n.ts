@@ -7,6 +7,7 @@ export interface Translations {
   title: string;
   quotaSuffix: string;
   token5h: string;
+  token5hCredit: string;
   weekly: string;
   mcp: string;
   resetsIn: string;
@@ -29,6 +30,7 @@ const ZH_T: Translations = {
   title: "GLM 额度",
   quotaSuffix: "额度",
   token5h: "5h 限额",
+  token5hCredit: "5h 配额",
   weekly: "周配额",
   mcp: "MCP",
   resetsIn: "重置",
@@ -51,6 +53,7 @@ const EN_T: Translations = {
   title: "GLM Quota",
   quotaSuffix: "Quota",
   token5h: "5h Token",
+  token5hCredit: "5h Quota",
   weekly: "Weekly",
   mcp: "MCP",
   resetsIn: "Reset",

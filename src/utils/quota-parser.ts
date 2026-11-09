@@ -5,6 +5,7 @@
  */
 
 const TOKEN_LIMIT_TYPE = "TOKENS_LIMIT";
+const CREDIT_LIMIT_TYPE = "CREDIT_LIMIT";
 const TIME_LIMIT_TYPE = "TIME_LIMIT";
 const DEFAULT_TOKEN_LIMIT = 4000000;
 
@@ -12,6 +13,8 @@ export interface QuotaItem {
   percentage: number;
   nextResetTime: number | null;
   total: number | null;
+  /** True when the window comes from a CREDIT_LIMIT entry (bigmodel.cn domestic API). */
+  credit?: boolean;
 }
 
 export interface McpQuotaItem {
@@ -48,13 +51,23 @@ function asFiniteNumber(value: unknown): number | null {
 }
 
 /**
+ * A limit item counts as a rolling usage window when its type is either
+ * TOKENS_LIMIT (z.ai international) or CREDIT_LIMIT (bigmodel.cn domestic).
+ * Both share the same shape (unit / number / percentage / nextResetTime);
+ * only the type tag differs.
+ */
+function isTokenWindowType(type: unknown): boolean {
+  return type === TOKEN_LIMIT_TYPE || type === CREDIT_LIMIT_TYPE;
+}
+
+/**
  * Determine if a limit item represents the 5-hour token window.
- * unit=3, number=5 → 5h Token
+ * unit=3, number=5 → 5h Token / 5h Quota
  */
 function isFiveHourTokenLimit(limit: RawLimitItem): boolean {
   const unit = asFiniteNumber(limit.unit);
   const number = asFiniteNumber(limit.number);
-  if (limit.type === TOKEN_LIMIT_TYPE && unit === 3 && number === 5)
+  if (isTokenWindowType(limit.type) && unit === 3 && number === 5)
     return true;
   return false;
 }
@@ -66,7 +79,7 @@ function isFiveHourTokenLimit(limit: RawLimitItem): boolean {
 function isWeeklyTokenLimit(limit: RawLimitItem): boolean {
   const unit = asFiniteNumber(limit.unit);
   const number = asFiniteNumber(limit.number);
-  if (limit.type === TOKEN_LIMIT_TYPE && unit === 6 && number === 1)
+  if (isTokenWindowType(limit.type) && unit === 6 && number === 1)
     return true;
   return false;
 }
@@ -119,14 +132,19 @@ export function parseQuotaData(
   let hasFiveHourMatch = false;
 
   for (const limit of limits) {
-    // Token limits (type = TOKENS_LIMIT)
-    if (limit.type === TOKEN_LIMIT_TYPE) {
+    // Usage windows (type = TOKENS_LIMIT on z.ai, CREDIT_LIMIT on bigmodel.cn)
+    if (isTokenWindowType(limit.type)) {
       const percentage = asFiniteNumber(limit.percentage) ?? 0;
       const nextResetTime = asFiniteNumber(limit.nextResetTime);
       const total = asFiniteNumber(limit.total);
 
       if (isFiveHourTokenLimit(limit)) {
-        result.fiveHour = { percentage, nextResetTime, total };
+        result.fiveHour = {
+          percentage,
+          nextResetTime,
+          total,
+          credit: limit.type === CREDIT_LIMIT_TYPE,
+        };
         if (total && total > 0) tokenLimit = total;
         hasFiveHourMatch = true;
       } else if (isWeeklyTokenLimit(limit)) {
@@ -154,14 +172,19 @@ export function parseQuotaData(
     }
   }
 
-  // If no 5h match found, try first TOKENS_LIMIT as fallback
+  // If no 5h match found, try the first usage window as fallback
   if (!result.fiveHour) {
     for (const limit of limits) {
-      if (limit.type === TOKEN_LIMIT_TYPE) {
+      if (isTokenWindowType(limit.type)) {
         const percentage = asFiniteNumber(limit.percentage) ?? 0;
         const nextResetTime = asFiniteNumber(limit.nextResetTime);
         const total = asFiniteNumber(limit.total);
-        result.fiveHour = { percentage, nextResetTime, total };
+        result.fiveHour = {
+          percentage,
+          nextResetTime,
+          total,
+          credit: limit.type === CREDIT_LIMIT_TYPE,
+        };
         if (total && total > 0) tokenLimit = total;
         break;
       }
